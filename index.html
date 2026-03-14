@@ -356,27 +356,47 @@
 
 <!-- ═══ SCREEN: ROOM ═══ -->
 <div class="screen" id="s-room">
-  <div class="status-bar">
-    <div class="status-dot waiting" id="statusDot"></div>
-    <span id="statusText">Підключення...</span>
+
+  <!-- ВИБІР РОЛІ -->
+  <div id="roleChoice">
+    <div class="result-box" style="margin-bottom:14px">
+      <div class="emoji-big" id="gameEmoji">🎮</div>
+      <h2 id="gameTitle">Гра</h2>
+      <div style="color:var(--muted);font-size:13px;margin-top:6px">Вибери роль</div>
+    </div>
+    <button class="btn btn-gold" onclick="becomeHost()">📡 Створити кімнату</button>
+    <button class="btn btn-outline" onclick="becomeJoin()">🔗 Приєднатись</button>
   </div>
 
-  <div class="room-box" id="hostBox">
-    <div class="room-title">📡 Твій код кімнати</div>
-    <div class="room-code" id="roomCode" onclick="copyCode()">----</div>
-    <div class="room-hint">Натисни щоб скопіювати • Поділись з другом</div>
-    <hr class="divider">
-    <div style="font-size:13px;color:var(--muted);text-align:center">Чекаємо на гравця 2...</div>
-  </div>
-
-  <div class="room-box" id="joinBox" style="display:none">
-    <div class="room-title">🔗 Приєднатись до кімнати</div>
-    <div class="input-row">
-      <input type="text" id="joinInput" placeholder="Код кімнати" maxlength="4">
-      <button class="btn btn-gold btn-small" onclick="joinRoom()">▶</button>
+  <!-- HOST: показує код -->
+  <div id="hostBox" style="display:none">
+    <div class="status-bar">
+      <div class="status-dot waiting" id="statusDot"></div>
+      <span id="statusText">Очікуємо гравця 2...</span>
+    </div>
+    <div class="room-box">
+      <div class="room-title">📡 Твій код кімнати</div>
+      <div class="room-code" id="roomCode" onclick="copyCode()">----</div>
+      <div class="room-hint">Натисни щоб скопіювати • Поділись з другом</div>
     </div>
   </div>
 
+  <!-- JOIN: поле вводу -->
+  <div id="joinBox" style="display:none">
+    <div class="status-bar">
+      <div class="status-dot waiting" id="statusDot2"></div>
+      <span id="statusText2">Введи код друга</span>
+    </div>
+    <div class="room-box">
+      <div class="room-title">🔗 Приєднатись до кімнати</div>
+      <div class="input-row">
+        <input type="text" id="joinInput" placeholder="Код (4 символи)" maxlength="4" oninput="this.value=this.value.toUpperCase()">
+        <button class="btn btn-gold btn-small" onclick="joinRoom()">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ОБИДВА ГОТОВІ -->
   <div id="waitingPlayers" style="display:none">
     <div class="result-box">
       <div class="emoji-big">🎮</div>
@@ -386,6 +406,7 @@
     <button class="btn btn-gold" onclick="startGame()" id="startBtn" style="display:none">🚀 Почати гру!</button>
   </div>
 </div>
+
 
 <!-- ═══ SCREEN: XO ═══ -->
 <div class="screen" id="s-xo">
@@ -516,6 +537,9 @@ function toast(msg, dur=2500) {
 // ═══════════════════════════════════════
 // PEERJS
 // ═══════════════════════════════════════
+const GAME_NAMES = {xo:'⚔️ Хрестики-нулики', battle:'⚓ Морський бій', durak:'🃏 Дурак', quiz:'🧠 Вікторина'};
+const GAME_EMOJIS = {xo:'⚔️', battle:'⚓', durak:'🃏', quiz:'🧠'};
+
 function makePeerId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({length:4}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
@@ -523,146 +547,94 @@ function makePeerId() {
 
 function selectGame(game) {
   currentGame = game;
-  const names = {xo:'⚔️ Хрестики-нулики',battle:'⚓ Морський бій',durak:'🃏 Дурак',quiz:'🧠 Вікторина'};
-  showScreen('s-room', names[game], 'Кімната');
-  initPeer();
+  showScreen('s-room', GAME_NAMES[game], 'Кімната');
+  // Показуємо вибір ролі
+  document.getElementById('roleChoice').style.display = 'block';
+  document.getElementById('hostBox').style.display = 'none';
+  document.getElementById('joinBox').style.display = 'none';
+  document.getElementById('waitingPlayers').style.display = 'none';
+  document.getElementById('gameEmoji').textContent = GAME_EMOJIS[game];
+  document.getElementById('gameTitle').textContent = GAME_NAMES[game];
 }
 
-function initPeer() {
+function becomeHost() {
+  isHost = true;
+  document.getElementById('roleChoice').style.display = 'none';
+  document.getElementById('hostBox').style.display = 'block';
+
   const code = makePeerId();
   document.getElementById('roomCode').textContent = code;
-  setStatus('waiting', 'Очікуємо з\'єднання...');
+  setStatus('waiting', 'Чекаємо гравця 2...');
 
-  peer = new Peer(MY_ID + '_' + code, {
+  if (peer) { try { peer.destroy(); } catch(e){} }
+  peer = new Peer(code, {
     host: '0.peerjs.com', port: 443, secure: true,
     config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
   });
 
-  peer.on('open', id => {
-    isHost = true;
-    document.getElementById('hostBox').style.display = 'block';
-    document.getElementById('joinBox').style.display = 'none';
-    setStatus('waiting', 'Чекаємо гравця 2...');
+  peer.on('open', () => {
+    setStatus('waiting', 'Поділись кодом з другом 👆');
   });
 
   peer.on('connection', c => {
     conn = c;
     setupConn();
+    setTimeout(() => sendMsg({type:'hello', name:ME}), 300);
   });
 
   peer.on('error', e => {
-    // Якщо ID зайнятий — стаємо joiners
-    isHost = false;
-    document.getElementById('hostBox').style.display = 'none';
-    document.getElementById('joinBox').style.display = 'block';
-    setStatus('waiting', 'Введи код кімнати друга');
+    // Код зайнятий — спробуємо новий
+    setTimeout(becomeHost, 600);
   });
+}
+
+function becomeJoin() {
+  isHost = false;
+  document.getElementById('roleChoice').style.display = 'none';
+  document.getElementById('joinBox').style.display = 'block';
+  document.getElementById('joinInput').focus();
 }
 
 function joinRoom() {
   const code = document.getElementById('joinInput').value.trim().toUpperCase();
   if (code.length < 4) { toast('⚠️ Введи 4-значний код'); return; }
 
-  // Знаходимо host peer ID — перебираємо можливі варіанти
-  // Host ID = їх MY_ID + '_' + code
-  // Але ми не знаємо їх MY_ID, тому підключаємось по code
-  setStatus('waiting', 'Підключення...');
+  document.getElementById('statusDot2').className = 'status-dot waiting';
+  document.getElementById('statusText2').textContent = 'Підключення до ' + code + '...';
 
-  // Якщо peer ще не ініціалізований
-  if (!peer || peer.destroyed) {
-    peer = new Peer(MY_ID + '_guest', {
-      host: '0.peerjs.com', port: 443, secure: true,
-      config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
-    });
-  }
-
-  // Шукаємо з'єднання — host опублікує код через broadcast
-  // Простіше: host ID = code (ми генеруємо peer з ID = code)
-  toast('🔍 Шукаємо кімнату ' + code + '...');
-
-  // Перепідключаємось з правильним ID
-  peer.destroy();
+  if (peer) { try { peer.destroy(); } catch(e){} }
   peer = new Peer(null, {
     host: '0.peerjs.com', port: 443, secure: true,
     config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
   });
+
   peer.on('open', () => {
-    conn = peer.connect(code, {reliable:true});
-    conn.on('open', () => { setupConn(); sendMsg({type:'hello',name:ME}); });
-    conn.on('error', () => toast('❌ Кімнату не знайдено'));
-  });
-}
-
-// Спрощена версія: host peer ID = просто код
-function initPeerSimple() {
-  const code = makePeerId();
-  document.getElementById('roomCode').textContent = code;
-  setStatus('waiting', 'Очікуємо з\'єднання...');
-
-  if (peer) { try { peer.destroy(); } catch(e){} }
-
-  peer = new Peer(code, {
-    host: '0.peerjs.com', port: 443, secure: true,
-    config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
-  });
-
-  peer.on('open', id => {
-    isHost = true;
-    document.getElementById('hostBox').style.display = 'block';
-    document.getElementById('joinBox').style.display = 'none';
-    setStatus('waiting', 'Чекаємо гравця 2... Код: ' + code);
-  });
-
-  peer.on('connection', c => {
-    conn = c;
-    setupConn();
-    sendMsg({type:'hello', name:ME});
+    conn = peer.connect(code, {reliable: true});
+    conn.on('open', () => {
+      document.getElementById('statusDot2').className = 'status-dot connected';
+      document.getElementById('statusText2').textContent = '🟢 З\'єднано!';
+      setupConn();
+      setTimeout(() => sendMsg({type:'hello', name:ME}), 300);
+    });
+    conn.on('error', () => {
+      toast('❌ Кімнату не знайдено. Перевір код.');
+      document.getElementById('statusDot2').className = 'status-dot waiting';
+      document.getElementById('statusText2').textContent = 'Спробуй ще раз';
+    });
   });
 
   peer.on('error', e => {
-    // Код зайнятий — генеруємо новий
-    setTimeout(initPeerSimple, 500);
-  });
-}
-
-// Перезаписуємо selectGame
-function selectGame(game) {
-  currentGame = game;
-  const names = {xo:'⚔️ Хрестики-нулики',battle:'⚓ Морський бій',durak:'🃏 Дурак',quiz:'🧠 Вікторина'};
-  showScreen('s-room', names[game], 'Кімната');
-  initPeerSimple();
-}
-
-function joinRoomSimple() {
-  const code = document.getElementById('joinInput').value.trim().toUpperCase();
-  if (code.length < 4) { toast('⚠️ Введи 4-значний код'); return; }
-  joinRoom2(code);
-}
-// Overwrite joinRoom
-window.joinRoom = joinRoomSimple;
-
-function joinRoom2(code) {
-  setStatus('waiting', 'Підключення до ' + code + '...');
-  if (peer) { try { peer.destroy(); } catch(e){} }
-  peer = new Peer(null, {
-    host: '0.peerjs.com', port: 443, secure: true,
-    config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
-  });
-  peer.on('open', () => {
-    isHost = false;
-    conn = peer.connect(code, {reliable:true, metadata:{name:ME}});
-    conn.on('open', () => {
-      setStatus('connected', 'З\'єднано!');
-      setupConn();
-      sendMsg({type:'hello', name:ME});
-    });
-    conn.on('error', e => { toast('❌ Помилка з\'єднання'); setStatus('waiting', 'Спробуй ще раз'); });
+    toast('❌ Помилка: ' + e.type);
+    document.getElementById('statusText2').textContent = 'Помилка з\'єднання';
   });
 }
 
 function setupConn() {
   conn.on('data', d => handleMsg(d));
-  conn.on('close', () => { setStatus('waiting','З\'єднання перервано'); toast('⚠️ Суперник відключився'); });
+  conn.on('close', () => {
+    toast('⚠️ Суперник відключився');
+    setStatus('waiting', 'З\'єднання перервано');
+  });
 }
 
 function sendMsg(data) {
@@ -671,15 +643,17 @@ function sendMsg(data) {
 
 function setStatus(state, text) {
   const dot = document.getElementById('statusDot');
-  dot.className = 'status-dot ' + state;
-  document.getElementById('statusText').textContent = text;
+  if (dot) { dot.className = 'status-dot ' + state; }
+  const st = document.getElementById('statusText');
+  if (st) st.textContent = text;
 }
 
 function copyCode() {
   const code = document.getElementById('roomCode').textContent;
-  navigator.clipboard?.writeText(code).then(() => toast('✅ Код скопійовано: ' + code));
+  navigator.clipboard?.writeText(code).then(() => toast('✅ Скопійовано: ' + code));
   tg?.HapticFeedback?.impactOccurred('light');
 }
+
 
 // ═══════════════════════════════════════
 // MESSAGE ROUTER
@@ -687,11 +661,16 @@ function copyCode() {
 function handleMsg(d) {
   if (d.type === 'hello') {
     enemyName = d.name || '?';
-    setStatus('connected', '🟢 ' + enemyName + ' підключений');
+    // Ховаємо всі блоки кімнати
+    document.getElementById('hostBox').style.display = 'none';
+    document.getElementById('joinBox').style.display = 'none';
+    // Показуємо "готові"
     document.getElementById('waitingPlayers').style.display = 'block';
     document.getElementById('playersReady').textContent = ME + ' vs ' + enemyName;
     if (isHost) document.getElementById('startBtn').style.display = 'block';
-    sendMsg({type:'hello', name:ME});
+    setStatus('connected', '🟢 ' + enemyName + ' підключений');
+    // Відповідаємо hello якщо ми гість
+    if (!isHost) sendMsg({type:'hello', name:ME});
     toast('🎮 ' + enemyName + ' підключився!');
   }
   else if (d.type === 'start') { launchGame(); }
