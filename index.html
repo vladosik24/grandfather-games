@@ -612,6 +612,9 @@ function checkPeer() {
   return true;
 }
 
+let reconnectTimer = null;
+let lastRoomCode = '';
+
 function becomeHost() {
   if (!checkPeer()) return;
   isHost = true;
@@ -619,6 +622,7 @@ function becomeHost() {
   document.getElementById('hostBox').style.display = 'block';
 
   const code = makePeerId();
+  lastRoomCode = code;
   document.getElementById('roomCode').textContent = code;
   setStatus('waiting', 'Чекаємо гравця 2...');
 
@@ -635,11 +639,15 @@ function becomeHost() {
   peer.on('connection', c => {
     conn = c;
     setupConn();
-    setTimeout(() => sendMsg({type:'hello', name:ME}), 300);
+    hideReconnectBanner();
+    setTimeout(() => {
+      sendMsg({type:'hello', name:ME});
+      // Якщо гра вже йде — надсилаємо стан
+      if (currentGame === 'durak') sendMsg({type:'durak_state', state: durakMirrorState()});
+    }, 300);
   });
 
   peer.on('error', e => {
-    // Код зайнятий — спробуємо новий
     setTimeout(becomeHost, 600);
   });
 }
@@ -655,6 +663,7 @@ function becomeJoin() {
 function joinRoom() {
   const code = document.getElementById('joinInput').value.trim().toUpperCase();
   if (code.length < 4) { toast('⚠️ Введи 4-значний код'); return; }
+  lastRoomCode = code;
 
   document.getElementById('statusDot2').className = 'status-dot waiting';
   document.getElementById('statusText2').textContent = 'Підключення до ' + code + '...';
@@ -689,9 +698,56 @@ function joinRoom() {
 function setupConn() {
   conn.on('data', d => handleMsg(d));
   conn.on('close', () => {
-    toast('⚠️ Суперник відключився');
-    setStatus('waiting', 'З\'єднання перервано');
+    // Показуємо банер реконнекту замість зупинки гри
+    showReconnectBanner();
+    // Гість намагається переконнектитись автоматично
+    if (!isHost && lastRoomCode) {
+      reconnectTimer = setTimeout(() => tryReconnect(), 2500);
+    }
   });
+}
+
+function tryReconnect() {
+  if (!lastRoomCode || !peer || peer.destroyed) return;
+  toast('🔄 Спроба реконнекту...');
+  conn = peer.connect(lastRoomCode, {reliable: true});
+  conn.on('open', () => {
+    hideReconnectBanner();
+    setupConn();
+    sendMsg({type:'hello', name:ME});
+    toast('✅ З\'єднання відновлено!');
+  });
+  conn.on('error', () => {
+    reconnectTimer = setTimeout(() => tryReconnect(), 3000);
+  });
+}
+
+function showReconnectBanner() {
+  let b = document.getElementById('reconnectBanner');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'reconnectBanner';
+    b.style.cssText = 'position:fixed;top:56px;left:0;right:0;background:#3a1010;border-bottom:1px solid #f87171;padding:10px 16px;z-index:500;display:flex;justify-content:space-between;align-items:center';
+    b.innerHTML =
+      '<span style="font-size:13px;color:#f87171">⚠️ Суперник відключився</span>' +
+      '<div style="display:flex;gap:8px">' +
+      '<span style="font-size:12px;color:var(--muted);animation:pulse 1s infinite">Чекаємо...</span>' +
+      '<button onclick="giveUp()" style="background:none;border:1px solid #f87171;color:#f87171;padding:4px 10px;border-radius:8px;font-size:12px;cursor:pointer">Здатись</button>' +
+      '</div>';
+    document.body.appendChild(b);
+  }
+  b.style.display = 'flex';
+}
+
+function hideReconnectBanner() {
+  clearTimeout(reconnectTimer);
+  const b = document.getElementById('reconnectBanner');
+  if (b) b.style.display = 'none';
+}
+
+function giveUp() {
+  hideReconnectBanner();
+  showResult(false, 'Гру завершено. Суперник відключився.');
 }
 
 function sendMsg(data) {
