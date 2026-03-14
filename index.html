@@ -324,6 +324,21 @@
   </div>
 </div>
 
+<!-- ═══ SCREEN: NAME ═══ -->
+<div class="screen" id="s-name">
+  <div class="result-box" style="margin-top:40px">
+    <div class="emoji-big">👴</div>
+    <h2>Як тебе звати?</h2>
+    <div style="color:var(--muted);font-size:13px;margin-top:6px">Суперник побачить твоє ім'я</div>
+  </div>
+  <div style="margin-top:16px">
+    <input type="text" id="nameInput" placeholder="Твоє ім'я" maxlength="20"
+      style="width:100%;font-size:16px;letter-spacing:1px;text-align:center"
+      onkeydown="if(event.key==='Enter')saveName()">
+    <button class="btn btn-gold mt" onclick="saveName()">▶ Грати!</button>
+  </div>
+</div>
+
 <!-- ═══ SCREEN: LOBBY ═══ -->
 <div class="screen active" id="s-lobby">
   <div class="game-grid">
@@ -499,8 +514,26 @@
 const tg = window.Telegram?.WebApp;
 if (tg) { tg.ready(); tg.expand(); }
 
-const ME = tg?.initDataUnsafe?.user?.first_name || 'Гравець';
+// Ім'я з Telegram або запитуємо вручну
+let ME = tg?.initDataUnsafe?.user?.first_name || '';
 const MY_ID = String(tg?.initDataUnsafe?.user?.id || Math.random().toString(36).slice(2,8));
+
+// Якщо ім'я не отримали — показуємо екран введення
+function initApp() {
+  if (!ME) {
+    document.getElementById('s-name').classList.add('active');
+    document.getElementById('s-lobby').classList.remove('active');
+  }
+}
+window.addEventListener('load', initApp);
+
+function saveName() {
+  const val = document.getElementById('nameInput').value.trim();
+  if (!val) { toast('⚠️ Введи ім\'я!'); return; }
+  ME = val;
+  document.getElementById('s-name').classList.remove('active');
+  document.getElementById('s-lobby').classList.add('active');
+}
 
 let peer = null, conn = null;
 let isHost = false;
