@@ -194,15 +194,15 @@
   /* ═══════════════ BATTLESHIP ═══════════════ */
   .sea-grid {
     display: grid; grid-template-columns: repeat(10,1fr);
-    gap: 3px; margin: 8px 0;
+    gap: 3px; margin: 6px 0;
   }
   .sea-cell {
     aspect-ratio: 1;
     background: #0a1628;
     border: 1px solid #1a3050;
-    border-radius: 4px;
+    border-radius: 3px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
     display: flex; align-items: center; justify-content: center;
     transition: background .15s;
   }
@@ -457,10 +457,9 @@
   <div id="battleSetup">
     <div class="sea-label">🚢 Розстав кораблі (натискай клітинки)</div>
     <div class="ship-panel" id="shipPanel">
-      <button class="ship-btn selected" data-size="4" onclick="selectShip(4)">🚢 ×1 (4)</button>
-      <button class="ship-btn" data-size="3" onclick="selectShip(3)">🛥 ×2 (3)</button>
-      <button class="ship-btn" data-size="2" onclick="selectShip(2)">⛵ ×3 (2)</button>
-      <button class="ship-btn" data-size="1" onclick="selectShip(1)">🚤 ×4 (1)</button>
+      <button class="ship-btn selected" data-size="3" onclick="selectShip(3)">🛥 ×1 (3кл)</button>
+      <button class="ship-btn" data-size="2" onclick="selectShip(2)">⛵ ×2 (2кл)</button>
+      <button class="ship-btn" data-size="1" onclick="selectShip(1)">🚤 ×3 (1кл)</button>
     </div>
     <div class="sea-label">Твоє поле:</div>
     <div class="sea-grid" id="myGrid"></div>
@@ -1044,8 +1043,8 @@ function xoReset() { sendMsg({type:'xo_reset'}); xoInit(); }
 // ═══════════════════════════════════════
 let myShips=[], enemyShips=[], myHits=[], enemyHits=[];
 let battleMyTurn=false, battleReady1=false, battleReady2=false;
-let selectedShipSize=4;
-const SHIPS_CONFIG = [{size:4,count:1},{size:3,count:2},{size:2,count:3},{size:1,count:4}];
+let selectedShipSize=3;
+const SHIPS_CONFIG = [{size:3,count:1},{size:2,count:2},{size:1,count:3}];
 
 function battleInit() {
   myShips=[]; enemyShips=[]; myHits=[]; enemyHits=[];
@@ -1088,7 +1087,7 @@ function placeShip(r,c) {
   if(cur>=lim){toast('⚠️ Вже досить кораблів цього типу');return;}
   myShips.push(cells);
   renderMyGrid();
-  if(myShips.length>=10) toast('✅ Всі кораблі розставлені!');
+  if(myShips.length>=6) toast('✅ Всі кораблі розставлені!');
 }
 
 function clearMyGrid(){myShips=[];renderMyGrid();}
@@ -1096,21 +1095,28 @@ function clearMyGrid(){myShips=[];renderMyGrid();}
 function battleReady(){
   if(myShips.length<1){toast('⚠️ Постав хоча б один корабель');return;}
   battleReady1=true;
-  sendMsg({type:'battle_ready',ships:myShips});
-  toast('✅ Готово! Чекаємо суперника...');
+  sendMsg({type:'battle_ready', ships:myShips});
+  // Показуємо що чекаємо
+  document.getElementById('battleSetup').innerHTML +=
+    '<div id="waitingMsg" style="text-align:center;color:var(--gold);padding:20px;font-size:15px">✅ Готово!<br><span style="color:var(--muted);font-size:13px">Чекаємо суперника...</span></div>';
+  document.querySelector('#battleSetup button:last-child').style.display='none';
   if(battleReady2) battleStartPlay();
 }
 
 function battleEnemyReady(ships){
-  enemyShips=ships; battleReady2=true;
+  enemyShips = ships;
+  battleReady2 = true;
   if(battleReady1) battleStartPlay();
 }
 
 function battleStartPlay(){
+  // Хост ходить першим
+  battleMyTurn = isHost;
   document.getElementById('battleSetup').style.display='none';
   document.getElementById('battlePlay').style.display='block';
   renderBattleGrids();
   updateBattleTurn();
+  toast(battleMyTurn ? '🎯 Твій хід — стріляй!' : '⏳ Суперник ходить першим');
 }
 
 function renderBattleGrids(){
@@ -1138,30 +1144,47 @@ function renderBattleGrids(){
 }
 
 function battleShoot(r,c){
-  if(!battleMyTurn)return;
-  battleMyTurn=false;
-  sendMsg({type:'battle_shot',r,c});
+  if(!battleMyTurn) return;
+  // Перевіряємо чи вже стріляли
+  if(enemyHits.find(h=>h[0]===r&&h[1]===c)) { toast('⚠️ Вже стріляв сюди!'); return; }
+  battleMyTurn = false;
+  sendMsg({type:'battle_shot', r, c});
   updateBattleTurn();
+  // Тимчасово позначаємо клітинку як "очікує"
+  renderBattleGrids();
 }
 
 function battleReceiveShot(r,c){
-  const hit=hasShip(myShips,r,c);
+  const hit = hasShip(myShips,r,c);
   myHits.push([r,c,hit]);
-  sendMsg({type:'battle_result',r,c,hit,sunk:false});
+  // Перевіряємо чи потоплений корабель
+  const sunkShip = hit ? myShips.find(ship =>
+    ship.every(([sr,sc]) => myHits.some(h=>h[0]===sr&&h[1]===sc&&h[2]))
+  ) : null;
+  sendMsg({type:'battle_result', r, c, hit, sunk: !!sunkShip});
   renderBattleGrids();
-  if(!hit){battleMyTurn=true;updateBattleTurn();}
+  // Якщо промах — хід переходить до того хто стріляв (суперник)
+  // Якщо попадання — суперник стріляє ще раз (НЕ передаємо хід)
+  if(!hit){ battleMyTurn = false; } // суперник стріляє знову бо він не передав хід
+  updateBattleTurn();
   // Перевірка поразки
-  const allSunk=myShips.every(ship=>ship.every(([sr,sc])=>myHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
-  if(allSunk) showResult(false,'Всі кораблі потоплені!');
+  const allSunk = myShips.every(ship=>ship.every(([sr,sc])=>myHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
+  if(allSunk) showResult(false,'Усі твої кораблі потоплено! 😔');
 }
 
 function battleReceiveResult(r,c,hit,sunk){
   enemyHits.push([r,c,hit]);
   renderBattleGrids();
-  if(hit){battleMyTurn=true;}
+  if(hit){
+    toast('💥 Попадання!');
+    battleMyTurn = true; // Попадання — стріляємо ще раз
+  } else {
+    toast('🌊 Промах');
+    battleMyTurn = false; // Промах — хід до суперника
+  }
   updateBattleTurn();
-  const allSunk=enemyShips.every(ship=>ship.every(([sr,sc])=>enemyHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
-  if(allSunk) showResult(true,'Всі кораблі суперника потоплені!');
+  const allSunk = enemyShips.every(ship=>ship.every(([sr,sc])=>enemyHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
+  if(allSunk) showResult(true,'Усі кораблі суперника потоплено! 🏆');
 }
 
 function updateBattleTurn(){
@@ -1201,21 +1224,33 @@ function cardBeats(attCard, defCard, trump){
 }
 
 function durakInit(){
-  if(!isHost) return;
+  if(!isHost) return; // Гість отримає стан через повідомлення
   const deck = makeDeck();
   const trump = deck[deck.length-1].s;
   const hand1 = deck.splice(0,6);
   const hand2 = deck.splice(0,6);
-  DS = {deck, myHand:hand1, enemyCount:6, table:[], trump,
-        myRole:'attacker', phase:'attack', selected:null, myScore:0, enemyScore:0};
-  const guestState = {deck, myHand:hand2, enemyCount:6, table:[], trump,
-        myRole:'defender', phase:'attack', selected:null, myScore:0, enemyScore:0};
-  sendMsg({type:'durak_state', state:guestState});
+  // Мій стан (host = attacker)
+  DS = {deck:[...deck], myHand:hand1, enemyCount:hand2.length,
+        table:[], trump, myRole:'attacker', phase:'attack', selected:null, myScore:0, enemyScore:0};
+  // Стан для гостя (defender) — передаємо його карти
+  const guestDS = {deck:[...deck], myHand:hand2, enemyCount:hand1.length,
+        table:[], trump, myRole:'defender', phase:'attack', selected:null, myScore:0, enemyScore:0};
+  sendMsg({type:'durak_state', state: guestDS});
   durakRender();
 }
 
 function durakReceiveState(state){
-  DS = state;
+  // Зберігаємо свої карти якщо не передані
+  if(state.myHand !== null && state.myHand !== undefined && state.myHand.length > 0){
+    DS.myHand = state.myHand;
+  }
+  DS.deck       = state.deck ?? DS.deck;
+  DS.enemyCount = state.enemyCount ?? DS.enemyCount;
+  DS.table      = state.table ?? DS.table;
+  DS.trump      = state.trump ?? DS.trump;
+  DS.myRole     = state.myRole ?? DS.myRole;
+  DS.phase      = state.phase ?? DS.phase;
+  DS.selected   = null;
   durakRender();
 }
 
@@ -1389,18 +1424,15 @@ function durakDraw(){
 }
 
 function durakMirrorState(){
-  // Дзеркальний стан для суперника
   return {
     deck: DS.deck,
-    myHand: [], // Суперник не знає наших карт
+    myHand: null,  // null = не перезаписувати карти суперника
     enemyCount: DS.myHand.length,
     table: DS.table,
     trump: DS.trump,
     myRole: DS.myRole==='attacker' ? 'defender' : 'attacker',
     phase: DS.phase,
     selected: null,
-    myScore: DS.enemyScore,
-    enemyScore: DS.myScore,
   };
 }
 
