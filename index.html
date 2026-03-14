@@ -1151,13 +1151,13 @@ function renderBattleGrids(){
 
 function battleShoot(r,c){
   if(!battleMyTurn) return;
-  // Перевіряємо чи вже стріляли
   if(enemyHits.find(h=>h[0]===r&&h[1]===c)) { toast('⚠️ Вже стріляв сюди!'); return; }
-  battleMyTurn = false;
+  battleMyTurn = false;          // Спочатку знімаємо хід
+  enemyHits.push([r,c,null]);   // Тимчасово додаємо "в очікуванні"
+  renderBattleGrids();           // Малюємо без цієї клітинки
+  enemyHits.pop();               // Прибираємо тимчасовий запис
   sendMsg({type:'battle_shot', r, c});
   updateBattleTurn();
-  // Тимчасово позначаємо клітинку як "очікує"
-  renderBattleGrids();
 }
 
 function battleReceiveShot(r,c){
@@ -1180,13 +1180,14 @@ function battleReceiveShot(r,c){
 
 function battleReceiveResult(r,c,hit,sunk){
   enemyHits.push([r,c,hit]);
-  renderBattleGrids();
   if(hit){
-    toast('💥 Попадання!');
-    battleMyTurn = true; // Попадання — стріляємо ще раз
+    battleMyTurn = true;  // Спочатку встановлюємо хід
+    renderBattleGrids();  // Потім малюємо з onclick
+    toast('💥 Попадання! Стріляй ще!');
   } else {
-    toast('🌊 Промах');
-    battleMyTurn = false; // Промах — хід до суперника
+    battleMyTurn = false;
+    renderBattleGrids();
+    toast('🌊 Промах — хід суперника');
   }
   updateBattleTurn();
   const allSunk = enemyShips.every(ship=>ship.every(([sr,sc])=>enemyHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
