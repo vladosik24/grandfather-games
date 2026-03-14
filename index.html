@@ -374,40 +374,55 @@
 
   <!-- ВИБІР РОЛІ -->
   <div id="roleChoice">
-    <div class="result-box" style="margin-bottom:14px">
-      <div class="emoji-big" id="gameEmoji">🎮</div>
-      <h2 id="gameTitle">Гра</h2>
-      <div style="color:var(--muted);font-size:13px;margin-top:6px">Вибери роль</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="font-size:32px" id="gameEmoji">🎮</div>
+      <div>
+        <div style="font-size:17px;font-weight:bold;color:var(--gold)" id="gameTitle">Гра</div>
+        <div style="font-size:12px;color:var(--muted)">Вибери або створи кімнату</div>
+      </div>
     </div>
-    <button class="btn btn-gold" onclick="becomeHost()">📡 Створити кімнату</button>
-    <button class="btn btn-outline" onclick="becomeJoin()">🔗 Приєднатись</button>
+
+    <!-- Активні кімнати -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Активні кімнати</div>
+      <button onclick="loadRooms()" style="background:none;border:none;color:var(--gold);font-size:13px;cursor:pointer">🔄 Оновити</button>
+    </div>
+    <div id="roomsList">
+      <div style="text-align:center;color:var(--muted);font-size:13px;padding:20px">
+        ⏳ Завантаження...
+      </div>
+    </div>
+
+    <hr class="divider">
+    <button class="btn btn-gold" onclick="becomeHost()">📡 Створити нову кімнату</button>
+    <div style="text-align:center;margin-top:10px;font-size:12px;color:var(--muted)">або введи код вручну:</div>
+    <div class="input-row" style="margin-top:8px">
+      <input type="text" id="joinInput" placeholder="Код (4 символи)" maxlength="4" oninput="this.value=this.value.toUpperCase()" style="font-size:16px">
+      <button class="btn btn-outline btn-small" onclick="joinRoomByCode()">▶</button>
+    </div>
   </div>
 
-  <!-- HOST: показує код -->
+  <!-- HOST: показує код і чекає -->
   <div id="hostBox" style="display:none">
     <div class="status-bar">
       <div class="status-dot waiting" id="statusDot"></div>
       <span id="statusText">Очікуємо гравця 2...</span>
     </div>
     <div class="room-box">
-      <div class="room-title">📡 Твій код кімнати</div>
+      <div class="room-title">📡 Твоя кімната відкрита</div>
       <div class="room-code" id="roomCode" onclick="copyCode()">----</div>
-      <div class="room-hint">Натисни щоб скопіювати • Поділись з другом</div>
+      <div class="room-hint">Натисни щоб скопіювати • Або поділись посиланням</div>
+      <div id="shareLink" style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center;word-break:break-all"></div>
     </div>
+    <button class="btn btn-outline" style="margin-top:8px" onclick="cancelRoom()">❌ Скасувати</button>
   </div>
 
-  <!-- JOIN: поле вводу -->
-  <div id="joinBox" style="display:none">
-    <div class="status-bar">
-      <div class="status-dot waiting" id="statusDot2"></div>
-      <span id="statusText2">Введи код друга</span>
-    </div>
-    <div class="room-box">
-      <div class="room-title">🔗 Приєднатись до кімнати</div>
-      <div class="input-row">
-        <input type="text" id="joinInput" placeholder="Код (4 символи)" maxlength="4" oninput="this.value=this.value.toUpperCase()">
-        <button class="btn btn-gold btn-small" onclick="joinRoom()">▶</button>
-      </div>
+  <!-- З'ЄДНАННЯ -->
+  <div id="connectingBox" style="display:none">
+    <div class="result-box">
+      <div class="emoji-big">🔄</div>
+      <h2>Підключення...</h2>
+      <div style="color:var(--muted);font-size:14px;margin-top:6px" id="connectingText">Шукаємо кімнату</div>
     </div>
   </div>
 
@@ -419,8 +434,10 @@
       <div style="color:var(--muted);font-size:14px;margin-top:6px" id="playersReady"></div>
     </div>
     <button class="btn btn-gold" onclick="startGame()" id="startBtn" style="display:none">🚀 Почати гру!</button>
+    <div id="guestWaitStart" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin-top:10px">⏳ Чекаємо поки хост запустить гру...</div>
   </div>
 </div>
+
 
 
 <!-- ═══ SCREEN: XO ═══ -->
@@ -595,13 +612,143 @@ function makePeerId() {
 function selectGame(game) {
   currentGame = game;
   showScreen('s-room', GAME_NAMES[game], 'Кімната');
-  // Показуємо вибір ролі
   document.getElementById('roleChoice').style.display = 'block';
   document.getElementById('hostBox').style.display = 'none';
-  document.getElementById('joinBox').style.display = 'none';
+  document.getElementById('connectingBox').style.display = 'none';
   document.getElementById('waitingPlayers').style.display = 'none';
   document.getElementById('gameEmoji').textContent = GAME_EMOJIS[game];
   document.getElementById('gameTitle').textContent = GAME_NAMES[game];
+  loadRooms();
+  // Перевіряємо ?join= в URL
+  const urlCode = new URLSearchParams(location.search).get('join');
+  if (urlCode) { joinRoomFromList(urlCode.toUpperCase()); }
+}
+
+// ═══════════════════════════════════════
+// JSONBIN — Активні кімнати
+// ═══════════════════════════════════════
+const BIN_ID  = '6741a2feacd3cb34a8a0b12a'; // Той самий bin що в Terrafront
+const BIN_KEY = '$2a$10$s5JdRVbQVZHBKXyFWHCrCuXjSSBpWcJWZEhnDmBbfDfOVRpGJCuCy';
+const BIN_URL = 'https://api.jsonbin.io/v3/b/' + BIN_ID;
+const GAME_NAMES_MAP = {xo:'Хрестики-нулики', battle:'Морський бій', durak:'Дурак', quiz:'Вікторина'};
+
+async function loadRooms() {
+  const list = document.getElementById('roomsList');
+  list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">⏳ Завантаження...</div>';
+  try {
+    const r = await fetch(BIN_URL + '/latest', {headers:{'X-Master-Key': BIN_KEY}});
+    const d = await r.json();
+    const rooms = (d.record?.rooms || []).filter(rm =>
+      rm.game === currentGame &&
+      rm.status === 'waiting' &&
+      Date.now() - rm.created < 300000 // молодші 5 хв
+    );
+    if (rooms.length === 0) {
+      list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">😴 Немає активних кімнат<br><span style="font-size:11px">Створи свою!</span></div>';
+      return;
+    }
+    list.innerHTML = '';
+    rooms.forEach(rm => {
+      const el = document.createElement('div');
+      el.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer';
+      const age = Math.floor((Date.now() - rm.created) / 1000);
+      const ageStr = age < 60 ? age+'с тому' : Math.floor(age/60)+'хв тому';
+      el.innerHTML =
+        '<div>' +
+        '<div style="font-size:14px;font-weight:bold;color:var(--text)">' + (rm.hostName||'Гравець') + '</div>' +
+        '<div style="font-size:11px;color:var(--muted)">' + ageStr + ' • код: <span style="color:var(--gold);font-family:monospace">' + rm.code + '</span></div>' +
+        '</div>' +
+        '<button onclick="joinRoomFromList(\'' + rm.code + '\')" style="background:linear-gradient(135deg,var(--gold),var(--gold2));color:#1a1000;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:bold;cursor:pointer">▶ Грати</button>';
+      list.appendChild(el);
+    });
+  } catch(e) {
+    list.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:16px">❌ Не вдалось завантажити</div>';
+  }
+}
+
+async function publishRoom(code) {
+  try {
+    const r = await fetch(BIN_URL + '/latest', {headers:{'X-Master-Key': BIN_KEY}});
+    const d = await r.json();
+    const rooms = (d.record?.rooms || []).filter(rm => Date.now() - rm.created < 300000);
+    rooms.push({
+      code, game: currentGame, status: 'waiting',
+      hostName: ME, created: Date.now()
+    });
+    await fetch(BIN_URL, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json','X-Master-Key': BIN_KEY},
+      body: JSON.stringify({rooms})
+    });
+  } catch(e) { console.log('publishRoom error', e); }
+}
+
+async function removeRoom(code) {
+  try {
+    const r = await fetch(BIN_URL + '/latest', {headers:{'X-Master-Key': BIN_KEY}});
+    const d = await r.json();
+    const rooms = (d.record?.rooms || []).filter(rm => rm.code !== code && Date.now() - rm.created < 300000);
+    await fetch(BIN_URL, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json','X-Master-Key': BIN_KEY},
+      body: JSON.stringify({rooms})
+    });
+  } catch(e) {}
+}
+
+function joinRoomFromList(code) {
+  document.getElementById('roleChoice').style.display = 'none';
+  document.getElementById('connectingBox').style.display = 'block';
+  document.getElementById('connectingText').textContent = 'Підключення до кімнати ' + code + '...';
+  lastRoomCode = code;
+  isHost = false;
+  doJoinRoom(code);
+}
+
+function joinRoomByCode() {
+  const code = document.getElementById('joinInput').value.trim().toUpperCase();
+  if (code.length < 4) { toast('⚠️ Введи 4-значний код'); return; }
+  document.getElementById('roleChoice').style.display = 'none';
+  document.getElementById('connectingBox').style.display = 'block';
+  document.getElementById('connectingText').textContent = 'Підключення до ' + code + '...';
+  lastRoomCode = code;
+  isHost = false;
+  doJoinRoom(code);
+}
+
+function doJoinRoom(code) {
+  if (peer) { try { peer.destroy(); } catch(e){} }
+  peer = new Peer(null, {
+    host: '0.peerjs.com', port: 443, secure: true,
+    config: {iceServers:[{urls:'stun:stun.l.google.com:19302'}]}
+  });
+  peer.on('open', () => {
+    conn = peer.connect(code, {reliable: true});
+    conn.on('open', () => {
+      document.getElementById('connectingBox').style.display = 'none';
+      setupConn();
+      setTimeout(() => sendMsg({type:'hello', name:ME}), 300);
+    });
+    conn.on('error', () => {
+      document.getElementById('connectingText').textContent = '❌ Кімнату не знайдено';
+      setTimeout(() => {
+        document.getElementById('connectingBox').style.display = 'none';
+        document.getElementById('roleChoice').style.display = 'block';
+        loadRooms();
+      }, 2000);
+    });
+  });
+  peer.on('error', () => {
+    document.getElementById('connectingText').textContent = '❌ Помилка з\'єднання';
+  });
+}
+
+function cancelRoom() {
+  removeRoom(lastRoomCode);
+  if (peer) { try { peer.destroy(); } catch(e){} }
+  document.getElementById('hostBox').style.display = 'none';
+  document.getElementById('roleChoice').style.display = 'block';
+  loadRooms();
 }
 
 function checkPeer() {
@@ -625,6 +772,9 @@ function becomeHost() {
   lastRoomCode = code;
   document.getElementById('roomCode').textContent = code;
   setStatus('waiting', 'Чекаємо гравця 2...');
+  // Показуємо share посилання
+  const shareUrl = location.href.split('?')[0] + '?join=' + code;
+  document.getElementById('shareLink').textContent = shareUrl;
 
   if (peer) { try { peer.destroy(); } catch(e){} }
   peer = new Peer(code, {
@@ -634,15 +784,16 @@ function becomeHost() {
 
   peer.on('open', () => {
     setStatus('waiting', 'Поділись кодом з другом 👆');
+    publishRoom(code); // Публікуємо в JSONBin
   });
 
   peer.on('connection', c => {
     conn = c;
     setupConn();
+    removeRoom(code); // Прибираємо з активних кімнат
     hideReconnectBanner();
     setTimeout(() => {
       sendMsg({type:'hello', name:ME});
-      // Якщо гра вже йде — надсилаємо стан
       if (currentGame === 'durak') sendMsg({type:'durak_state', state: durakMirrorState()});
     }, 300);
   });
@@ -774,15 +925,18 @@ function copyCode() {
 function handleMsg(d) {
   if (d.type === 'hello') {
     enemyName = d.name || '?';
-    // Ховаємо всі блоки кімнати
     document.getElementById('hostBox').style.display = 'none';
-    document.getElementById('joinBox').style.display = 'none';
-    // Показуємо "готові"
+    document.getElementById('connectingBox').style.display = 'none';
     document.getElementById('waitingPlayers').style.display = 'block';
     document.getElementById('playersReady').textContent = ME + ' vs ' + enemyName;
-    if (isHost) document.getElementById('startBtn').style.display = 'block';
+    if (isHost) {
+      document.getElementById('startBtn').style.display = 'block';
+      document.getElementById('guestWaitStart').style.display = 'none';
+    } else {
+      document.getElementById('startBtn').style.display = 'none';
+      document.getElementById('guestWaitStart').style.display = 'block';
+    }
     setStatus('connected', '🟢 ' + enemyName + ' підключений');
-    // Відповідаємо hello якщо ми гість
     if (!isHost) sendMsg({type:'hello', name:ME});
     toast('🎮 ' + enemyName + ' підключився!');
   }
