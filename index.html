@@ -457,9 +457,10 @@
   <div id="battleSetup">
     <div class="sea-label">🚢 Розстав кораблі (натискай клітинки)</div>
     <div class="ship-panel" id="shipPanel">
-      <button class="ship-btn selected" data-size="3" onclick="selectShip(3)">🛥 ×1 (3кл)</button>
-      <button class="ship-btn" data-size="2" onclick="selectShip(2)">⛵ ×2 (2кл)</button>
-      <button class="ship-btn" data-size="1" onclick="selectShip(1)">🚤 ×3 (1кл)</button>
+      <button class="ship-btn selected" data-size="4" onclick="selectShip(4)">🚢 ×1 (4кл)</button>
+      <button class="ship-btn" data-size="3" onclick="selectShip(3)">🛥 ×2 (3кл)</button>
+      <button class="ship-btn" data-size="2" onclick="selectShip(2)">⛵ ×3 (2кл)</button>
+      <button class="ship-btn" data-size="1" onclick="selectShip(1)">🚤 ×4 (1кл)</button>
     </div>
     <div class="sea-label">Твоє поле:</div>
     <div class="sea-grid" id="myGrid"></div>
@@ -1048,8 +1049,8 @@ function xoReset() { sendMsg({type:'xo_reset'}); xoInit(); }
 // ═══════════════════════════════════════
 let myShips=[], enemyShips=[], myHits=[], enemyHits=[];
 let battleMyTurn=false, battleReady1=false, battleReady2=false;
-let selectedShipSize=3;
-const SHIPS_CONFIG = [{size:3,count:1},{size:2,count:2},{size:1,count:3}];
+let selectedShipSize=4;
+const SHIPS_CONFIG = [{size:4,count:1},{size:3,count:2},{size:2,count:3},{size:1,count:4}];
 
 function battleInit() {
   myShips=[]; enemyShips=[]; myHits=[]; enemyHits=[];
@@ -1092,7 +1093,7 @@ function placeShip(r,c) {
   if(cur>=lim){toast('⚠️ Вже досить кораблів цього типу');return;}
   myShips.push(cells);
   renderMyGrid();
-  if(myShips.length>=6) toast('✅ Всі кораблі розставлені!');
+  if(myShips.length>=10) toast('✅ Всі кораблі розставлені!');
 }
 
 function clearMyGrid(){myShips=[];renderMyGrid();}
@@ -1168,9 +1169,9 @@ function battleReceiveShot(r,c){
   ) : null;
   sendMsg({type:'battle_result', r, c, hit, sunk: !!sunkShip});
   renderBattleGrids();
-  // Якщо промах — хід переходить до того хто стріляв (суперник)
-  // Якщо попадання — суперник стріляє ще раз (НЕ передаємо хід)
-  if(!hit){ battleMyTurn = false; } // суперник стріляє знову бо він не передав хід
+  // Якщо промах — тепер МІЙ хід (я відбив атаку)
+  // Якщо попадання — суперник стріляє ще раз (не мій хід)
+  battleMyTurn = !hit;
   updateBattleTurn();
   // Перевірка поразки
   const allSunk = myShips.every(ship=>ship.every(([sr,sc])=>myHits.some(h=>h[0]===sr&&h[1]===sc&&h[2])));
