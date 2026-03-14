@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>🎮 Ігри Діда</title>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
 <style>
   :root {
     --bg:        #0f0e17;
@@ -557,7 +557,16 @@ function selectGame(game) {
   document.getElementById('gameTitle').textContent = GAME_NAMES[game];
 }
 
+function checkPeer() {
+  if (typeof Peer === 'undefined') {
+    toast('❌ Помилка завантаження. Оновіть сторінку.');
+    return false;
+  }
+  return true;
+}
+
 function becomeHost() {
+  if (!checkPeer()) return;
   isHost = true;
   document.getElementById('roleChoice').style.display = 'none';
   document.getElementById('hostBox').style.display = 'block';
@@ -589,6 +598,7 @@ function becomeHost() {
 }
 
 function becomeJoin() {
+  if (!checkPeer()) return;
   isHost = false;
   document.getElementById('roleChoice').style.display = 'none';
   document.getElementById('joinBox').style.display = 'block';
