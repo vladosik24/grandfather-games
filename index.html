@@ -461,27 +461,41 @@
 
 <!-- ═══ SCREEN: DURAK ═══ -->
 <div class="screen" id="s-durak">
+  <!-- Інфо рядок -->
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-    <div>
-      <div style="font-size:12px;color:var(--muted)">Козирна масть</div>
-      <div class="trump-badge" id="trumpBadge">—</div>
-    </div>
-    <div style="text-align:right">
-      <div style="font-size:12px;color:var(--muted)">В колоді</div>
-      <div style="font-size:20px;font-weight:bold;color:var(--gold2)" id="deckCount">—</div>
+    <div class="trump-badge" id="trumpBadge">Козир: —</div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div style="text-align:center">
+        <div style="font-size:10px;color:var(--muted)">Колода</div>
+        <div style="font-size:18px;font-weight:bold;color:var(--gold2)" id="deckCount">—</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:10px;color:var(--muted)" id="enemyLabel">Суперник</div>
+        <div style="font-size:18px;font-weight:bold;color:var(--text)" id="enemyCardCount">?</div>
+      </div>
     </div>
   </div>
-  <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Карти суперника: <span id="enemyCardCount">?</span></div>
-  <div class="cards-area" id="enemyCards"></div>
-  <div style="font-size:12px;color:var(--muted);margin:10px 0 4px">Стіл:</div>
-  <div class="cards-area" id="tableCards" style="min-height:100px"></div>
-  <div class="status-bar mt"><div class="status-dot" id="durakTurnDot"></div><span id="durakTurnText">Завантаження...</span></div>
-  <div style="font-size:12px;color:var(--muted);margin-bottom:4px">Твої карти:</div>
-  <div class="cards-area" id="myCards"></div>
-  <div style="display:flex;gap:8px;margin-top:10px">
-    <button class="btn btn-gold" style="flex:1" onclick="durakPlay()">▶ Кинути</button>
-    <button class="btn btn-outline" style="flex:1" onclick="durakTake()">📥 Взяти</button>
+
+  <!-- Статус -->
+  <div class="status-bar" id="durakStatus">
+    <div class="status-dot" id="durakTurnDot"></div>
+    <span id="durakTurnText">Завантаження...</span>
   </div>
+
+  <!-- Карти суперника -->
+  <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Карти суперника (<span id="enemyCardCount2">?</span>)</div>
+  <div class="cards-area" id="enemyCards" style="min-height:80px"></div>
+
+  <!-- Стіл: пари атака/захист -->
+  <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">Стіл:</div>
+  <div id="tableCards" style="display:flex;flex-wrap:wrap;gap:10px;min-height:90px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px;align-items:flex-end"></div>
+
+  <!-- Мої карти -->
+  <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">Твої карти:</div>
+  <div class="cards-area" id="myCards" style="min-height:80px"></div>
+
+  <!-- Кнопки (динамічні) -->
+  <div id="durakBtns" style="display:flex;gap:8px;margin-top:10px"></div>
 </div>
 
 <!-- ═══ SCREEN: QUIZ ═══ -->
@@ -723,6 +737,7 @@ function handleMsg(d) {
   else if (d.type === 'battle_shot') { battleReceiveShot(d.r, d.c); }
   else if (d.type === 'battle_result') { battleReceiveResult(d.r, d.c, d.hit, d.sunk); }
   else if (d.type === 'durak_state') { durakReceiveState(d.state); }
+  else if (d.type === 'durak_win')  { showResult(false, '🃏 '+d.winner+' скинув всі карти першим!'); }
   else if (d.type === 'quiz_answer') { quizEnemyAnswer(d.idx, d.time); }
   else if (d.type === 'quiz_next') { quizNext(); }
 }
@@ -945,11 +960,23 @@ function updateBattleTurn(){
 }
 
 // ═══════════════════════════════════════
-// DURAK — Карткова гра
+// DURAK — повна логіка атака/захист
 // ═══════════════════════════════════════
 const SUITS=['♠','♣','♥','♦'], RANKS=['6','7','8','9','10','J','Q','K','A'];
 const RED=['♥','♦'];
-let durakState={deck:[],myHand:[],enemyCount:0,table:[],trump:'',myTurn:false,selected:null};
+
+// Стан гри — синхронізується між гравцями
+// role: 'attacker' | 'defender'
+// table: [{attack: card, defense: card|null}, ...]
+// phase: 'attack' | 'defense' | 'between'
+let DS = {
+  deck:[], myHand:[], enemyCount:0,
+  table:[], trump:'♦',
+  myRole:'attacker', // attacker або defender
+  phase:'attack',    // attack, defense, between
+  selected:null,
+  myScore:0, enemyScore:0,
+};
 
 function makeDeck(){
   const d=[];
@@ -957,69 +984,222 @@ function makeDeck(){
   return d.sort(()=>Math.random()-.5);
 }
 
+function cardBeats(attCard, defCard, trump){
+  if(defCard.s === attCard.s) return defCard.v > attCard.v;
+  if(defCard.s === trump && attCard.s !== trump) return true;
+  return false;
+}
+
 function durakInit(){
-  if(!isHost)return; // Host роздає карти
-  const deck=makeDeck();
-  const trump=deck[deck.length-1].s;
-  const hand1=deck.splice(0,6), hand2=deck.splice(0,6);
-  durakState={deck,myHand:hand1,enemyCount:6,table:[],trump,myTurn:true,selected:null};
-  sendMsg({type:'durak_state',state:{deck,myHand:hand2,enemyCount:6,table:[],trump,myTurn:false,selected:null}});
+  if(!isHost) return;
+  const deck = makeDeck();
+  const trump = deck[deck.length-1].s;
+  const hand1 = deck.splice(0,6);
+  const hand2 = deck.splice(0,6);
+  DS = {deck, myHand:hand1, enemyCount:6, table:[], trump,
+        myRole:'attacker', phase:'attack', selected:null, myScore:0, enemyScore:0};
+  const guestState = {deck, myHand:hand2, enemyCount:6, table:[], trump,
+        myRole:'defender', phase:'attack', selected:null, myScore:0, enemyScore:0};
+  sendMsg({type:'durak_state', state:guestState});
   durakRender();
 }
 
 function durakReceiveState(state){
-  durakState=state;
+  DS = state;
   durakRender();
 }
 
 function durakRender(){
-  const s=durakState;
-  document.getElementById('trumpBadge').textContent='Козир: '+s.trump;
-  document.getElementById('deckCount').textContent=s.deck?.length||0;
-  document.getElementById('enemyCardCount').textContent=s.enemyCount||'?';
+  // Козир і колода
+  document.getElementById('trumpBadge').textContent = 'Козир: ' + DS.trump;
+  document.getElementById('deckCount').textContent = DS.deck?.length || 0;
+  document.getElementById('enemyCardCount').textContent = DS.enemyCount || 0;
+  document.getElementById('enemyCardCount2').textContent = DS.enemyCount || 0;
+  document.getElementById('enemyLabel').textContent = enemyName || 'Суперник';
+
+  // Статус
+  const isMyTurn = (DS.phase==='attack' && DS.myRole==='attacker') ||
+                   (DS.phase==='defense' && DS.myRole==='defender');
+  const dot = document.getElementById('durakTurnDot');
+  dot.className = 'status-dot ' + (isMyTurn ? 'connected' : 'waiting');
+
+  let statusTxt = '';
+  if(DS.phase==='attack'){
+    statusTxt = DS.myRole==='attacker' ? '⚔️ Твій хід — атакуй!' : '⏳ '+enemyName+' атакує...';
+  } else if(DS.phase==='defense'){
+    statusTxt = DS.myRole==='defender' ? '🛡 Твій хід — відбийся!' : '⏳ '+enemyName+' відбивається...';
+  } else {
+    statusTxt = '🔄 Між ходами...';
+  }
+  document.getElementById('durakTurnText').textContent = statusTxt;
+
   // Карти суперника (сорочкою)
-  const ec=document.getElementById('enemyCards');
-  ec.innerHTML='';
-  for(let i=0;i<(s.enemyCount||0);i++){const c=document.createElement('div');c.className='card back';ec.appendChild(c);}
-  // Стіл
-  const tc=document.getElementById('tableCards');
-  tc.innerHTML='';
-  (s.table||[]).forEach(c=>{const el=document.createElement('div');el.className='card'+(RED.includes(c.s)?' red':'');el.innerHTML='<div class="card-rank">'+c.r+'</div><div class="card-suit">'+c.s+'</div>';tc.appendChild(el);});
+  const ec = document.getElementById('enemyCards');
+  ec.innerHTML = '';
+  for(let i=0;i<(DS.enemyCount||0);i++){
+    const c=document.createElement('div'); c.className='card back'; ec.appendChild(c);
+  }
+
+  // Стіл — пари атака/захист
+  const tc = document.getElementById('tableCards');
+  tc.innerHTML = '';
+  (DS.table||[]).forEach(pair => {
+    const pairDiv = document.createElement('div');
+    pairDiv.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px';
+    // Карта атаки
+    const att = pair.attack;
+    const attEl = document.createElement('div');
+    attEl.className = 'card' + (RED.includes(att.s)?' red':'');
+    attEl.innerHTML = '<div class="card-rank">'+att.r+'</div><div class="card-suit">'+att.s+'</div>';
+    pairDiv.appendChild(attEl);
+    // Карта захисту (якщо є)
+    if(pair.defense){
+      const def = pair.defense;
+      const defEl = document.createElement('div');
+      defEl.className = 'card' + (RED.includes(def.s)?' red':'');
+      defEl.style.cssText = 'transform:rotate(15deg);margin-top:-50px;margin-left:10px';
+      defEl.innerHTML = '<div class="card-rank">'+def.r+'</div><div class="card-suit">'+def.s+'</div>';
+      pairDiv.appendChild(defEl);
+    } else {
+      // Незахищена карта — мітка
+      const lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:10px;color:var(--red);text-align:center';
+      lbl.textContent = '❗';
+      pairDiv.appendChild(lbl);
+    }
+    tc.appendChild(pairDiv);
+  });
+
   // Мої карти
-  const mc=document.getElementById('myCards');
-  mc.innerHTML='';
-  (s.myHand||[]).forEach((c,i)=>{
-    const el=document.createElement('div');
-    el.className='card'+(RED.includes(c.s)?' red':'')+(s.selected===i?' selected':'');
-    el.innerHTML='<div class="card-rank">'+c.r+'</div><div class="card-suit">'+c.s+'</div>';
-    el.onclick=()=>{durakState.selected=durakState.selected===i?null:i;durakRender();};
+  const mc = document.getElementById('myCards');
+  mc.innerHTML = '';
+  (DS.myHand||[]).forEach((c,i) => {
+    const el = document.createElement('div');
+    el.className = 'card'+(RED.includes(c.s)?' red':'')+(DS.selected===i?' selected':'');
+    el.innerHTML = '<div class="card-rank">'+c.r+'</div><div class="card-suit">'+c.s+'</div>';
+    el.onclick = () => { DS.selected = DS.selected===i ? null : i; durakRender(); };
     mc.appendChild(el);
   });
-  // Хід
-  document.getElementById('durakTurnDot').className='status-dot'+(s.myTurn?' connected':' waiting');
-  document.getElementById('durakTurnText').textContent=s.myTurn?'✨ Твій хід!':'⏳ Хід '+enemyName;
+
+  // Кнопки залежно від ролі/фази
+  const btns = document.getElementById('durakBtns');
+  btns.innerHTML = '';
+  if(DS.phase==='attack' && DS.myRole==='attacker'){
+    btns.innerHTML = '<button class="btn btn-gold" style="flex:1" onclick="durakAttack()">⚔️ Атакувати</button>';
+  } else if(DS.phase==='defense' && DS.myRole==='defender'){
+    btns.innerHTML = '<button class="btn btn-gold" style="flex:1" onclick="durakDefend()">🛡 Відбити</button>'+
+                     '<button class="btn btn-outline" style="flex:1" onclick="durakTake()">📥 Взяти</button>';
+  } else if(DS.phase==='attack' && DS.myRole==='attacker' && DS.table.length>0){
+    btns.innerHTML = '<button class="btn btn-outline" onclick="durakPass()">✅ Пас (завершити хід)</button>';
+  }
+  // Пас для атакуючого якщо є карти на столі
+  if(DS.phase==='attack' && DS.myRole==='attacker' && (DS.table||[]).length > 0){
+    btns.innerHTML += '<button class="btn btn-outline" style="margin-top:8px" onclick="durakPass()">✅ Завершити атаку</button>';
+  }
 }
 
-function durakPlay(){
-  const s=durakState;
-  if(!s.myTurn||s.selected===null)return;
-  const card=s.myHand[s.selected];
-  s.table.push(card);
-  s.myHand.splice(s.selected,1);
-  s.selected=null; s.myTurn=false;
-  sendMsg({type:'durak_state',state:{...s,myTurn:true,enemyCount:s.myHand.length}});
+function durakAttack(){
+  if(DS.myRole!=='attacker' || DS.phase!=='attack' || DS.selected===null) return;
+  const card = DS.myHand[DS.selected];
+  // Перша карта або масть/ранг вже є на столі
+  if(DS.table.length>0){
+    const ranks = DS.table.flatMap(p=>[p.attack.r, p.defense?.r].filter(Boolean));
+    if(!ranks.includes(card.r)){ toast('⚠️ Можна кидати тільки карти того ж рангу!'); return; }
+  }
+  DS.myHand.splice(DS.selected,1);
+  DS.table.push({attack:card, defense:null});
+  DS.selected = null;
+  DS.phase = 'defense';
+  const sync = durakMirrorState();
+  sendMsg({type:'durak_state', state:sync});
+  // Перевіряємо перемогу
+  if(DS.myHand.length===0 && DS.deck.length===0){ durakWin(); return; }
+  durakRender();
+}
+
+function durakDefend(){
+  if(DS.myRole!=='defender' || DS.phase!=='defense' || DS.selected===null) return;
+  // Знаходимо незахищену карту атаки
+  const openIdx = DS.table.findIndex(p=>!p.defense);
+  if(openIdx===-1){ toast('Всі карти вже відбиті!'); return; }
+  const card = DS.myHand[DS.selected];
+  const attCard = DS.table[openIdx].attack;
+  if(!cardBeats(attCard, card, DS.trump)){
+    toast('⚠️ Ця карта не б\'є '+attCard.r+attCard.s+'!'); return;
+  }
+  DS.myHand.splice(DS.selected,1);
+  DS.table[openIdx].defense = card;
+  DS.selected = null;
+  // Якщо всі відбиті — фаза attack знову (захисник став атакуючим)
+  const allDefended = DS.table.every(p=>p.defense);
+  if(allDefended){
+    DS.phase = 'attack';
+    // Добираємо карти
+    durakDraw();
+  }
+  const sync = durakMirrorState();
+  sendMsg({type:'durak_state', state:sync});
+  if(DS.myHand.length===0 && DS.deck.length===0){ durakWin(); return; }
   durakRender();
 }
 
 function durakTake(){
-  const s=durakState;
-  if(s.myTurn)return;
-  s.myHand.push(...s.table);
-  s.table=[]; s.myTurn=false;
-  sendMsg({type:'durak_state',state:{...s,myTurn:true,enemyCount:s.myHand.length}});
+  if(DS.myRole!=='defender') return;
+  // Беремо всі карти зі столу
+  DS.table.forEach(p=>{ DS.myHand.push(p.attack); if(p.defense) DS.myHand.push(p.defense); });
+  DS.table = [];
+  DS.phase = 'attack'; // Атакуючий ходить знову
+  // Добираємо
+  durakDraw();
+  const sync = durakMirrorState();
+  sendMsg({type:'durak_state', state:sync});
+  toast('📥 Взяв карти!');
   durakRender();
-  toast('📥 Ти взяв карти');
 }
+
+function durakPass(){
+  if(DS.myRole!=='attacker') return;
+  // Всі відбиті — скидаємо стіл, міняємо ролі
+  DS.table = [];
+  DS.phase = 'attack';
+  // Захисник тепер атакує
+  const wasDefender = 'defender';
+  DS.myRole = 'defender'; // Тепер я захисник
+  durakDraw();
+  const sync = durakMirrorState();
+  sendMsg({type:'durak_state', state:sync});
+  durakRender();
+}
+
+function durakDraw(){
+  // Добираємо до 6 карт
+  while(DS.myHand.length < 6 && DS.deck.length > 0){
+    DS.myHand.push(DS.deck.splice(0,1)[0]);
+  }
+}
+
+function durakMirrorState(){
+  // Дзеркальний стан для суперника
+  return {
+    deck: DS.deck,
+    myHand: [], // Суперник не знає наших карт
+    enemyCount: DS.myHand.length,
+    table: DS.table,
+    trump: DS.trump,
+    myRole: DS.myRole==='attacker' ? 'defender' : 'attacker',
+    phase: DS.phase,
+    selected: null,
+    myScore: DS.enemyScore,
+    enemyScore: DS.myScore,
+  };
+}
+
+function durakWin(){
+  DS.myScore++;
+  sendMsg({type:'durak_win', winner: ME});
+  showResult(true, '🃏 У тебе скінчились карти першим!');
+}
+
 
 // ═══════════════════════════════════════
 // QUIZ — Вікторина
