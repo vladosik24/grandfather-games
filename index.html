@@ -618,9 +618,10 @@ function selectGame(game) {
   document.getElementById('gameEmoji').textContent = GAME_EMOJIS[game];
   document.getElementById('gameTitle').textContent = GAME_NAMES[game];
   loadRooms();
-  // Перевіряємо ?join= в URL
-  const urlCode = new URLSearchParams(location.search).get('join');
-  if (urlCode) { joinRoomFromList(urlCode.toUpperCase()); }
+  // Перевіряємо ?join= — може бути в search або після # у Telegram
+  const fullUrl = location.href;
+  const joinMatch = fullUrl.match(/[?&]join=([A-Z0-9]{4})/);
+  if (joinMatch) { joinRoomFromList(joinMatch[1]); }
 }
 
 // ═══════════════════════════════════════
@@ -771,9 +772,13 @@ function becomeHost() {
   lastRoomCode = code;
   document.getElementById('roomCode').textContent = code;
   setStatus('waiting', 'Чекаємо гравця 2...');
-  // Показуємо share посилання
-  const shareUrl = location.href.split('?')[0] + '?join=' + code;
-  document.getElementById('shareLink').textContent = shareUrl;
+  // Показуємо share посилання — чистий URL без TG params
+  const cleanUrl = location.origin + location.pathname;
+  const shareUrl = cleanUrl + '?join=' + code;
+  document.getElementById('shareLink').innerHTML =
+    '<span style="color:var(--gold);font-family:monospace;font-size:13px">' + cleanUrl + '?join=' + code + '</span>' +
+    '<br><button onclick="navigator.clipboard?.writeText(\'' + shareUrl + '\').then(()=>toast(\'✅ Посилання скопійовано!\'))" ' +
+    'style="margin-top:6px;background:none;border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:8px;font-size:12px;cursor:pointer">📋 Копіювати посилання</button>';
 
   if (peer) { try { peer.destroy(); } catch(e){} }
   peer = new Peer(code, {
